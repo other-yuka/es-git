@@ -9,6 +9,8 @@ env:
   DEBUG: napi:*
   APP_NAME: es-git
   MACOSX_DEPLOYMENT_TARGET: '10.13'
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 jobs:
   build:
     strategy:
@@ -111,73 +113,90 @@ jobs:
           name: bindings-${{ matrix.settings.target }}
           path: ${{ env.APP_NAME }}.*.node
           if-no-files-found: error
-  release:
+#  release:
+#    runs-on: ubuntu-latest
+#    permissions:
+#      id-token: write
+#      contents: write
+#      deployments: write
+#    needs:
+#      - build
+#    steps:
+#      - uses: actions/checkout@v4
+#      - name: Setup node
+#        uses: actions/setup-node@v4
+#        with:
+#          node-version-file: ".node-version"
+#          check-latest: true
+#          cache: yarn
+#      - name: Install dependencies
+#        run: yarn install
+#      - name: Download all artifacts
+#        uses: actions/download-artifact@v4
+#        with:
+#          path: release-artifacts
+#      - name: Prepare next release
+#        if: github.ref_type == 'branch'
+#        run: node --no-warnings=ExperimentalWarning --experimental-strip-types ./.scripts/prepare-next-release.ts ${{ github.run_number }} ${{ github.sha }}
+#      - name: Create npm dirs
+#        run: yarn napi create-npm-dir -t .
+#      - name: Move artifacts
+#        run: yarn napi artifacts -d release-artifacts
+#      - name: List packages
+#        run: ls -R ./npm
+#        shell: bash
+#      - id: extract-changelog
+#        uses: dahlia/submark@5a5ff0a58382fb812616a5801402f5aef00f90ce
+#        with:
+#          input-file: CHANGELOG.md
+#          heading-level: 2
+#          heading-title-text: version ${{ github.ref_name }}
+#          ignore-case: true
+#          omit-heading: true
+#      - run: 'cat ${{ steps.extract-changelog.outputs.output-file }}'
+#      - name: Release
+#        id: gh-release
+#        uses: softprops/action-gh-release@v2
+#        if: github.ref_type == 'tag'
+#        with:
+#          body_path: ${{ steps.extract-changelog.outputs.output-file }}
+#          repository: toss/es-git
+#          generate_release_notes: false
+#          token: ${{ github.token }}
+#      - name: Publish
+#        run: |
+#          set -ex
+#          npm config set provenance true
+#          npm config set //registry.npmjs.org/:_authToken "$NPM_AUTH_TOKEN"
+#          npm config set access public
+#          npm whoami
+#          if [[ "$GITHUB_REF_TYPE" = "tag" ]]; then
+#            yarn napi prepublish -t npm --gh-release-id ${{ steps.gh-release.outputs.id }}
+#            npm publish --access public
+#          elif [[ "$GITHUB_REF_TYPE" = "branch" ]]; then
+#            npm config set tag next
+#            yarn napi prepublish -t npm --skip-gh-release
+#            npm publish --access public --tag next
+#          else
+#            echo "Skip publish"
+#          fi
+#        env:
+#          GITHUB_TOKEN: ${{ github.token }}
+#          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  deploy-docs:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: write
-      deployments: write
-    needs:
-      - build
+#    needs:
+#      - release
     steps:
       - uses: actions/checkout@v4
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: ".node-version"
-          check-latest: true
-          cache: yarn
-      - name: Install dependencies
-        run: yarn install
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-artifacts
-      - name: Prepare next release
-        if: github.ref_type == 'branch'
-        run: node --no-warnings=ExperimentalWarning --experimental-strip-types ./.scripts/prepare-next-release.ts ${{ github.run_number }} ${{ github.sha }}
-      - name: Create npm dirs
-        run: yarn napi create-npm-dir -t .
-      - name: Move artifacts
-        run: yarn napi artifacts -d release-artifacts
-      - name: List packages
-        run: ls -R ./npm
-        shell: bash
-      - id: extract-changelog
-        uses: dahlia/submark@5a5ff0a58382fb812616a5801402f5aef00f90ce
-        with:
-          input-file: CHANGELOG.md
-          heading-level: 2
-          heading-title-text: version ${{ github.ref_name }}
-          ignore-case: true
-          omit-heading: true
-      - run: 'cat ${{ steps.extract-changelog.outputs.output-file }}'
-      - name: Release
-        id: gh-release
-        uses: softprops/action-gh-release@v2
-        if: github.ref_type == 'tag'
-        with:
-          body_path: ${{ steps.extract-changelog.outputs.output-file }}
-          repository: toss/es-git
-          generate_release_notes: false
-          token: ${{ github.token }}
-      - name: Publish
-        run: |
-          set -ex
-          npm config set provenance true
-          npm config set //registry.npmjs.org/:_authToken "$NPM_AUTH_TOKEN"
-          npm config set access public
-          npm whoami
-          if [[ "$GITHUB_REF_TYPE" = "tag" ]]; then
-            yarn napi prepublish -t npm --gh-release-id ${{ steps.gh-release.outputs.id }}
-            npm publish --access public
-          elif [[ "$GITHUB_REF_TYPE" = "branch" ]]; then
-            npm config set tag next
-            yarn napi prepublish -t npm --skip-gh-release
-            npm publish --access public --tag next
-          else
-            echo "Skip publish"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+
+
