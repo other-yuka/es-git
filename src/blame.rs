@@ -34,10 +34,6 @@ pub struct BlameHunk {
 #[derive(Default)]
 /// Options for controlling blame behavior
 pub struct BlameOptions {
-  /// A single line to blame (1-based index)
-  pub line: Option<u32>,
-  /// An array of two numbers [start, end] to blame a range of lines
-  pub range: Option<Vec<u32>>,
   /// The oid of the newest commit to consider. The blame algorithm will stop
   /// when this commit is reached.
   pub newest_commit: Option<String>,
@@ -53,30 +49,6 @@ pub struct BlameOptions {
 }
 
 impl BlameOptions {
-  /// Create new options for a single line
-  pub fn for_line(line: u32) -> Self {
-    Self {
-      line: Some(line),
-      range: None,
-      newest_commit: None,
-      oldest_commit: None,
-      path: None,
-      track_lines_movement: None,
-    }
-  }
-
-  /// Create new options for a range of lines
-  pub fn for_range(start: u32, end: u32) -> Self {
-    Self {
-      line: None,
-      range: Some(vec![start, end]),
-      newest_commit: None,
-      oldest_commit: None,
-      path: None,
-      track_lines_movement: None,
-    }
-  }
-
   /// Set the path to the file
   pub fn with_path(mut self, path: &str) -> Self {
     self.path = Some(path.to_string());
@@ -105,16 +77,6 @@ impl BlameOptions {
 impl From<&BlameOptions> for git2::BlameOptions {
   fn from(options: &BlameOptions) -> Self {
     let mut git_opts = git2::BlameOptions::new();
-
-    if let Some(line) = options.line {
-      git_opts.min_line(line as usize);
-      git_opts.max_line(line as usize);
-    } else if let Some(range) = &options.range {
-      if range.len() >= 2 {
-        git_opts.min_line(range[0] as usize);
-        git_opts.max_line(range[1] as usize);
-      }
-    }
 
     if let Some(ref newest_commit) = options.newest_commit {
       if let Ok(oid) = git2::Oid::from_str(newest_commit) {
@@ -250,58 +212,160 @@ impl Blame {
 
 #[napi]
 impl Repository {
-  #[napi]
-  /// Get a blame object for the file at the given path with all configurable options
-  ///
-  /// @category Repository/Methods
-  /// @signature
-  /// ```ts
-  /// class Repository {
-  ///   blameFile(path: string, options?: BlameOptions | null | undefined): Blame;
-  /// }
-  /// ```
-  ///
-  /// @example
-  /// ```ts
-  /// // Blame the entire file
-  /// const blame = repo.blameFile('path/to/file.js');
-  ///
-  /// // Blame a single line (line 10)
-  /// const lineBlame = repo.blameFile('path/to/file.js', { line: 10 });
-  ///
-  /// // Blame a range of lines (lines 5-15)
-  /// const rangeBlame = repo.blameFile('path/to/file.js', { range: [5, 15] });
-  /// ```
-  ///
-  /// @param {string} path - Path to the file to blame. This path takes precedence over any path specified in options.
-  /// @param {BlameOptions} [options] - Options to control blame behavior.
-  ///        You can specify line ranges in two ways:
-  ///        1. `options.line`: A single line number to blame
-  ///        2. `options.range`: An array of two numbers [start, end] to blame a range
-  /// @returns Blame object for the specified file
-  pub fn blame_file(
+  fn get_blame_with_options(
     &self,
     path: String,
+    min_line: Option<u32>,
+    max_line: Option<u32>,
     options: Option<BlameOptions>,
     this: Reference<Repository>,
     env: Env,
-  ) -> crate::Result<Blame> {
+  ) -> Result<Blame> {
     let file_path = Path::new(&path);
 
     let blame = this.share_with(env, |repo| {
-      let result = match &options {
-        Some(options) => {
-          let mut git_options = git2::BlameOptions::from(options);
-          repo.inner.blame_file(file_path, Some(&mut git_options))
-        }
-        None => repo.inner.blame_file(file_path, None),
+      let mut git_options = match &options {
+        Some(options) => git2::BlameOptions::from(options),
+        None => git2::BlameOptions::new(),
       };
 
-      result.map_err(|e| Error::from(crate::Error::from(e)))
+      if let Some(min) = min_line {
+        git_options.min_line(min as usize);
+      }
+
+      if let Some(max) = max_line {
+        git_options.max_line(max as usize);
+      }
+
+      repo
+        .inner
+        .blame_file(file_path, Some(&mut git_options))
+        .map_err(|e| Error::from_reason(e.to_string()))
     })?;
 
     Ok(Blame {
       inner: BlameInner::Repo(blame),
     })
+  }
+
+  #[napi]
+  /// Get blame hunks for the entire file
+  ///
+  /// @category Repository/Methods
+  /// @signature
+  /// ```ts
+  /// class Repository {
+  ///   getBlame(path: string, options?: BlameOptions | null | undefined): BlameHunk[];
+  /// }
+  /// ```
+  ///
+  /// @example
+  /// ```ts
+  /// // Get blame hunks for the entire file
+  /// const hunks = repo.getBlame('path/to/file.js');
+  /// ```
+  ///
+  /// @param {string} path - Path to the file to blame
+  /// @param {BlameOptions} [options] - Options to control blame behavior
+  /// @returns Array of blame hunks for the file
+  pub fn get_blame(
+    &self,
+    path: String,
+    options: Option<BlameOptions>,
+    this: Reference<Repository>,
+    env: Env,
+  ) -> Result<Vec<BlameHunk>> {
+    let blame = self.get_blame_with_options(path, None, None, options, this, env)?;
+
+    blame.get_hunks()
+  }
+
+  #[napi]
+  /// Get blame hunk for a specific line in a file
+  ///
+  /// @category Repository/Methods
+  /// @signature
+  /// ```ts
+  /// class Repository {
+  ///   getBlameLine(path: string, line: number, options?: BlameOptions | null | undefined): BlameHunk;
+  /// }
+  /// ```
+  ///
+  /// @example
+  /// ```ts
+  /// // Get blame hunk for line 10
+  /// const hunk = repo.getBlameLine('path/to/file.js', 10);
+  /// ```
+  ///
+  /// @param {string} path - Path to the file to blame
+  /// @param {number} line - The line number to get blame information for (1-based)
+  /// @param {BlameOptions} [options] - Options to control blame behavior
+  /// @returns Blame hunk for the specified line
+  pub fn get_blame_line(
+    &self,
+    path: String,
+    line: u32,
+    options: Option<BlameOptions>,
+    this: Reference<Repository>,
+    env: Env,
+  ) -> Result<BlameHunk> {
+    let blame = self.get_blame_with_options(path, Some(line), Some(line), options, this, env)?;
+
+    blame.get_hunk_by_line(line)
+  }
+
+  #[napi]
+  /// Get blame hunks for a range of lines in a file
+  ///
+  /// @category Repository/Methods
+  /// @signature
+  /// ```ts
+  /// class Repository {
+  ///   getBlameRange(path: string, startLine: number, endLine: number, options?: BlameOptions | null | undefined): BlameHunk[];
+  /// }
+  /// ```
+  ///
+  /// @example
+  /// ```ts
+  /// // Get blame hunks for lines 5-15
+  /// const hunks = repo.getBlameRange('path/to/file.js', 5, 15);
+  /// ```
+  ///
+  /// @param {string} path - Path to the file to blame
+  /// @param {number} startLine - The starting line number (1-based)
+  /// @param {number} endLine - The ending line number (1-based)
+  /// @param {BlameOptions} [options] - Options to control blame behavior
+  /// @returns Array of blame hunks for the specified range
+  pub fn get_blame_range(
+    &self,
+    path: String,
+    start_line: u32,
+    end_line: u32,
+    options: Option<BlameOptions>,
+    this: Reference<Repository>,
+    env: Env,
+  ) -> Result<Vec<BlameHunk>> {
+    if start_line > end_line {
+      return Err(Error::from_reason(format!(
+        "Invalid range: start line ({}) must be less than or equal to end line ({})",
+        start_line, end_line
+      )));
+    }
+
+    let blame = self.get_blame_with_options(path, Some(start_line), Some(end_line), options, this, env)?;
+
+    let hunks = blame.get_hunks()?;
+
+    let filtered_hunks: Vec<BlameHunk> = hunks
+      .into_iter()
+      .filter(|hunk| {
+        let hunk_start = hunk.final_start_line_number;
+        let hunk_end = hunk_start + hunk.lines_in_hunk - 1;
+
+        (hunk_start <= end_line) && (hunk_end >= start_line)
+      })
+      .collect();
+
+    Ok(filtered_hunks)
   }
 }

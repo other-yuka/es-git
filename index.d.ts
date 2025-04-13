@@ -28,10 +28,6 @@ export interface BlameHunk {
 }
 /** Options for controlling blame behavior */
 export interface BlameOptions {
-  /** A single line to blame (1-based index) */
-  line?: number
-  /** An array of two numbers [start, end] to blame a range of lines */
-  range?: Array<number>
   /**
    * The oid of the newest commit to consider. The blame algorithm will stop
    * when this commit is reached.
@@ -3328,36 +3324,74 @@ export declare class Remote {
  */
 export declare class Repository {
   /**
-   * Get a blame object for the file at the given path with all configurable options
+   * Get blame hunks for the entire file
    *
    * @category Repository/Methods
    * @signature
    * ```ts
    * class Repository {
-   *   blameFile(path: string, options?: BlameOptions | null | undefined): Blame;
+   *   getBlame(path: string, options?: BlameOptions | null | undefined): BlameHunk[];
    * }
    * ```
    *
    * @example
    * ```ts
-   * // Blame the entire file
-   * const blame = repo.blameFile('path/to/file.js');
-   *
-   * // Blame a single line (line 10)
-   * const lineBlame = repo.blameFile('path/to/file.js', { line: 10 });
-   *
-   * // Blame a range of lines (lines 5-15)
-   * const rangeBlame = repo.blameFile('path/to/file.js', { range: [5, 15] });
+   * // Get blame hunks for the entire file
+   * const hunks = repo.getBlame('path/to/file.js');
    * ```
    *
-   * @param {string} path - Path to the file to blame. This path takes precedence over any path specified in options.
-   * @param {BlameOptions} [options] - Options to control blame behavior.
-   *        You can specify line ranges in two ways:
-   *        1. `options.line`: A single line number to blame
-   *        2. `options.range`: An array of two numbers [start, end] to blame a range
-   * @returns Blame object for the specified file
+   * @param {string} path - Path to the file to blame
+   * @param {BlameOptions} [options] - Options to control blame behavior
+   * @returns Array of blame hunks for the file
    */
-  blameFile(path: string, options?: BlameOptions | undefined | null): Blame
+  getBlame(path: string, options?: BlameOptions | undefined | null): Array<BlameHunk>
+  /**
+   * Get blame hunk for a specific line in a file
+   *
+   * @category Repository/Methods
+   * @signature
+   * ```ts
+   * class Repository {
+   *   getBlameLine(path: string, line: number, options?: BlameOptions | null | undefined): BlameHunk;
+   * }
+   * ```
+   *
+   * @example
+   * ```ts
+   * // Get blame hunk for line 10
+   * const hunk = repo.getBlameLine('path/to/file.js', 10);
+   * ```
+   *
+   * @param {string} path - Path to the file to blame
+   * @param {number} line - The line number to get blame information for (1-based)
+   * @param {BlameOptions} [options] - Options to control blame behavior
+   * @returns Blame hunk for the specified line
+   */
+  getBlameLine(path: string, line: number, options?: BlameOptions | undefined | null): BlameHunk
+  /**
+   * Get blame hunks for a range of lines in a file
+   *
+   * @category Repository/Methods
+   * @signature
+   * ```ts
+   * class Repository {
+   *   getBlameRange(path: string, startLine: number, endLine: number, options?: BlameOptions | null | undefined): BlameHunk[];
+   * }
+   * ```
+   *
+   * @example
+   * ```ts
+   * // Get blame hunks for lines 5-15
+   * const hunks = repo.getBlameRange('path/to/file.js', 5, 15);
+   * ```
+   *
+   * @param {string} path - Path to the file to blame
+   * @param {number} startLine - The starting line number (1-based)
+   * @param {number} endLine - The ending line number (1-based)
+   * @param {BlameOptions} [options] - Options to control blame behavior
+   * @returns Array of blame hunks for the specified range
+   */
+  getBlameRange(path: string, startLine: number, endLine: number, options?: BlameOptions | undefined | null): Array<BlameHunk>
   /**
    * Lookup a reference to one of the commits in a repository.
    *
