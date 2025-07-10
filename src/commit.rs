@@ -5,6 +5,7 @@ use crate::tree::{Tree, TreeInner};
 use chrono::{DateTime, Utc};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::cell::RefCell;
 use std::ops::Deref;
 
 #[napi(object)]
@@ -51,6 +52,7 @@ impl Deref for CommitInner {
 /// A class to represent a git commit.
 pub struct Commit {
   pub(crate) inner: CommitInner,
+  pub(crate) cached_id: RefCell<Option<String>>,
 }
 
 #[napi]
@@ -69,7 +71,11 @@ impl Commit {
   ///
   /// @returns ID(SHA1) of a repository commit.
   pub fn id(&self) -> String {
-    self.inner.id().to_string()
+    let mut cached = self.cached_id.borrow_mut();
+    if cached.is_none() {
+      *cached = Some(self.inner.id().to_string());
+    }
+    cached.as_ref().unwrap().clone()
   }
 
   #[napi]
@@ -244,6 +250,7 @@ impl Commit {
     let obj = self.inner.as_object().clone();
     GitObject {
       inner: ObjectInner::Owned(obj),
+      cached_id: RefCell::new(None),
     }
   }
 }
@@ -294,6 +301,7 @@ impl Repository {
     })?;
     Ok(Commit {
       inner: CommitInner::Repo(commit),
+      cached_id: RefCell::new(None),
     })
   }
 

@@ -1,6 +1,7 @@
 use crate::repository::Repository;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::fmt::Write;
 
 #[napi]
 #[repr(u32)]
@@ -16,6 +17,7 @@ pub enum RevwalkSort {
 /// more leaves and excluding one or more roots.
 pub struct Revwalk {
   pub(crate) inner: SharedReference<Repository, git2::Revwalk<'static>>,
+  oid_buffer: String,
 }
 
 #[napi]
@@ -25,7 +27,13 @@ impl Generator for Revwalk {
   type Return = ();
 
   fn next(&mut self, _value: Option<Self::Next>) -> Option<Self::Yield> {
-    self.inner.next().and_then(|x| x.ok().map(|x| x.to_string()))
+    self.inner.next().and_then(|result| {
+      result.ok().map(|oid| {
+        self.oid_buffer.clear();
+        write!(&mut self.oid_buffer, "{oid}").unwrap();
+        self.oid_buffer.clone()
+      })
+    })
   }
 }
 
@@ -333,6 +341,9 @@ impl Repository {
     let inner = this.share_with(env, |repo| {
       repo.inner.revwalk().map_err(crate::Error::from).map_err(|e| e.into())
     })?;
-    Ok(Revwalk { inner })
+    Ok(Revwalk {
+      inner,
+      oid_buffer: String::with_capacity(40),
+    })
   }
 }

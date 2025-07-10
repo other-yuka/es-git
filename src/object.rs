@@ -3,6 +3,7 @@ use crate::commit::{Commit, CommitInner};
 use crate::repository::Repository;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::cell::RefCell;
 use std::ops::Deref;
 
 #[napi(string_enum)]
@@ -65,6 +66,7 @@ impl Deref for ObjectInner {
 /// [1]: https://git-scm.com/book/en/Git-Internals-Git-Objects
 pub struct GitObject {
   pub(crate) inner: ObjectInner,
+  pub(crate) cached_id: RefCell<Option<String>>,
 }
 
 #[napi]
@@ -82,7 +84,11 @@ impl GitObject {
   ///
   /// @returns ID(SHA1) of a repository object.
   pub fn id(&self) -> String {
-    self.inner.id().to_string()
+    let mut cached = self.cached_id.borrow_mut();
+    if cached.is_none() {
+      *cached = Some(self.inner.id().to_string());
+    }
+    cached.as_ref().unwrap().clone()
   }
 
   #[napi(js_name = "type")]
@@ -121,6 +127,7 @@ impl GitObject {
     let git_object = self.inner.peel(obj_type.into())?;
     let object = Self {
       inner: ObjectInner::Owned(git_object),
+      cached_id: RefCell::new(None),
     };
     Ok(object)
   }
@@ -141,6 +148,7 @@ impl GitObject {
     let git_commit = self.inner.peel_to_commit()?;
     let commit = Commit {
       inner: CommitInner::Owned(git_commit),
+      cached_id: RefCell::new(None),
     };
     Ok(commit)
   }
@@ -185,6 +193,7 @@ impl GitObject {
   pub fn as_commit(&self) -> Option<Commit> {
     self.inner.as_commit().map(|x| Commit {
       inner: CommitInner::Owned(x.clone()),
+      cached_id: RefCell::new(None),
     })
   }
 }
@@ -232,6 +241,7 @@ impl Repository {
     })?;
     Ok(GitObject {
       inner: ObjectInner::Repo(object),
+      cached_id: RefCell::new(None),
     })
   }
 }

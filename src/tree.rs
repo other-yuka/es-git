@@ -3,6 +3,7 @@ use crate::object::{GitObject, ObjectInner, ObjectType};
 use crate::repository::Repository;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::cell::RefCell;
 use std::ops::Deref;
 use std::path::Path;
 
@@ -283,6 +284,7 @@ impl Tree {
   pub fn as_object(&self) -> GitObject {
     GitObject {
       inner: ObjectInner::Owned(self.inner.as_object().clone()),
+      cached_id: RefCell::new(None),
     }
   }
 }
@@ -420,6 +422,7 @@ impl TreeEntry {
     })?;
     Ok(GitObject {
       inner: ObjectInner::Repo(object),
+      cached_id: RefCell::new(None),
     })
   }
 }

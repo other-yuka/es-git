@@ -3,6 +3,7 @@ use crate::repository::Repository;
 use crate::signature::{Signature, SignaturePayload};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::cell::RefCell;
 
 #[napi]
 /// Determine whether a tag name is valid, meaning that (when prefixed with refs/tags/) that
@@ -101,6 +102,7 @@ impl Tag {
     let object = self.inner.peel()?;
     Ok(GitObject {
       inner: ObjectInner::Owned(object),
+      cached_id: RefCell::new(None),
     })
   }
 
@@ -139,6 +141,7 @@ impl Tag {
     let object = self.inner.target()?;
     Ok(GitObject {
       inner: ObjectInner::Owned(object),
+      cached_id: RefCell::new(None),
     })
   }
 
